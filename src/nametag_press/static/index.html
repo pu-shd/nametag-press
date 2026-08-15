@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Badges — {{ EVENT_TITLE }}</title>
+<link rel="stylesheet" href="/ui/tokens/tokens.css">
+<link rel="stylesheet" href="/ui/components/layout.css">
+<link rel="stylesheet" href="/ui/components/buttons.css">
+<style>{{ THEME_VARS }}</style>
+<style>
+  body{margin:0;font-family:var(--pt-font-body,system-ui,sans-serif);color:#1a1a1a}
+  header{border-bottom:3px solid var(--pt-brand-70,#e77500);padding:.9rem 1rem}
+  header h1{margin:0;font-size:1.2rem}
+  main{max-width:82rem;margin:0 auto;padding:1rem 1rem 4rem;
+       display:grid;grid-template-columns:1fr 22rem;gap:1.25rem}
+  @media (max-width:60rem){main{grid-template-columns:1fr}}
+  .tiles{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.8rem}
+  .tile{border:1px solid #e0e0e0;border-radius:6px;padding:.45rem .7rem;cursor:pointer;background:#fff}
+  .tile b{display:block;font-size:1.2rem}
+  .tile span{color:#666;font-size:.76rem;text-transform:uppercase}
+  .tile[aria-pressed="true"]{border-color:var(--pt-brand-70,#e77500);
+       box-shadow:0 0 0 2px color-mix(in srgb,var(--pt-brand-70,#e77500) 25%,transparent)}
+  .bar{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem}
+  .bar input[type=search]{flex:1 1 14rem;padding:.45rem .6rem;border:1px solid #bbb;border-radius:4px}
+  table{width:100%;border-collapse:collapse;font-size:.9rem}
+  th,td{text-align:left;padding:.4rem .55rem;border-bottom:1px solid #eee}
+  th{background:#f6f6f6;position:sticky;top:0}
+  aside{border:1px solid #e0e0e0;border-radius:8px;padding:1rem;height:fit-content;position:sticky;top:1rem}
+  aside h2{margin:.1rem 0 .7rem;font-size:1rem}
+  aside label{display:block;margin:.55rem 0 .2rem;font-size:.86rem;color:#444}
+  aside select,aside input[type=number]{width:100%;padding:.4rem;border:1px solid #bbb;border-radius:4px}
+  .row{display:flex;gap:.5rem;margin-top:.8rem;flex-wrap:wrap}
+  iframe{width:100%;height:26rem;border:1px solid #ddd;border-radius:6px;margin-top:.8rem;background:#fafafa}
+  .muted{color:#666;font-size:.84rem}
+  .note{background:#fff8e6;border-left:3px solid #d9a300;padding:.5rem .7rem;font-size:.84rem;margin-top:.8rem}
+</style>
+</head>
+<body>
+<header><h1>Badges — {{ EVENT_TITLE }}</h1></header>
+<main>
+  <section>
+    <div class="tiles" id="tiles"></div>
+    <div class="bar">
+      <input id="q" type="search" placeholder="Search name, email, affiliation…" aria-label="Search">
+      <label><input type="checkbox" id="all" checked> select all shown</label>
+      <span class="muted" id="count"></span>
+    </div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th></th><th>Name</th><th>Affiliation</th><th>Role</th><th>Poster</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <aside>
+    <h2>Print run</h2>
+    <label for="tpl">Avery stock</label>
+    <select id="tpl"></select>
+    <p class="muted" id="tplInfo"></p>
+
+    <div class="row">
+      <button class="pt-btn" id="preview">Preview</button>
+      <a class="pt-btn" id="download" href="#" download>Download PDF</a>
+    </div>
+
+    <label for="sheets">Calibration sheets</label>
+    <input type="number" id="sheets" min="1" max="20" value="1">
+    <div class="row"><a class="pt-btn" id="blank" href="/api/badges/blank.pdf">Blank sheet</a></div>
+
+    <div class="note">
+      Print one calibration sheet on plain paper and hold it against real stock
+      before committing a box. A passing test suite and a misaligned sheet are
+      entirely compatible.
+    </div>
+
+    <iframe id="pv" title="Badge preview"></iframe>
+  </aside>
+</main>
+
+<script id="profile" type="application/json">{{ PROFILE_JSON }}</script>
+<script type="module">
+import { escapeHtml } from "/ui/js/esc.js";
+const el = id => document.getElementById(id);
+let roster = [], layouts = null, selected = new Set();
+
+function tiles(t){
+  const items = [["All", t.total, ""], ...Object.entries(t.by_role).map(([k,v])=>[k,v,k]),
+                 ["Posters", t.presenting, "__poster"]];
+  el("tiles").innerHTML = items.map(([label,n,key]) =>
+    `<button class="tile" data-role="${escapeHtml(key)}" aria-pressed="false">
+       <b>${n}</b><span>${escapeHtml(label)}</span></button>`).join("");
+}
+
+function visible(){
+  const q = el("q").value.trim().toLowerCase();
+  const active = el("tiles").querySelector('[aria-pressed="true"]');
+  const role = active?.dataset.role ?? "";
+  let rows = roster;
+  if (role === "__poster") rows = rows.filter(r => r.presenting_poster);
+  else if (role) rows = rows.filter(r => (r.attendee_status ?? "") === role);
+  if (q) rows = rows.filter(r => [r.first_name,r.last_name,r.email_address,r.home_institution]
+      .filter(Boolean).join(" ").toLowerCase().includes(q));
+  return rows;
+}
+
+function render(){
+  const rows = visible();
+  el("count").textContent = `${selected.size} selected of ${rows.length} shown`;
+  el("rows").innerHTML = rows.length ? rows.map(r => `
+    <tr>
+      <td><input type="checkbox" data-key="${escapeHtml(r.person_key)}"
+           ${selected.has(r.person_key) ? "checked" : ""} aria-label="Select"></td>
+      <td>${escapeHtml([r.first_name,r.last_name].filter(Boolean).join(" "))}</td>
+      <td>${escapeHtml(r.home_institution ?? "")}</td>
+      <td>${escapeHtml(r.attendee_status ?? "")}</td>
+      <td>${r.presenting_poster ? "yes" : ""}</td>
+    </tr>`).join("") : `<tr><td colspan="5">Nothing matches.</td></tr>`;
+  updateHref();
+}
+
+function updateHref(){
+  const keys = [...selected].join(",");
+  const tpl = el("tpl").value;
+  const qs = new URLSearchParams({ template: tpl });
+  if (keys) qs.set("keys", keys);
+  el("download").href = `/api/badges.pdf?${qs}`;
+  el("blank").href = `/api/badges/blank.pdf?template=${encodeURIComponent(tpl)}&sheets=${el("sheets").value}`;
+  const L = layouts?.layouts?.[tpl];
+  if (L) el("tplInfo").textContent =
+    `${L.per_page} per sheet · ${(L.card_w/72).toFixed(2)} × ${(L.card_h/72).toFixed(2)} in · ` +
+    `${Math.ceil((selected.size || roster.length) / L.per_page)} sheet(s)`;
+}
+
+el("rows").addEventListener("change", ev => {
+  const cb = ev.target.closest("input[type=checkbox][data-key]");
+  if (!cb) return;
+  cb.checked ? selected.add(cb.dataset.key) : selected.delete(cb.dataset.key);
+  el("count").textContent = `${selected.size} selected of ${visible().length} shown`;
+  updateHref();
+});
+
+el("tiles").addEventListener("click", ev => {
+  const b = ev.target.closest(".tile"); if (!b) return;
+  const on = b.getAttribute("aria-pressed") === "true";
+  el("tiles").querySelectorAll(".tile").forEach(x => x.setAttribute("aria-pressed","false"));
+  b.setAttribute("aria-pressed", on ? "false" : "true");
+  render();
+});
+
+el("all").addEventListener("change", e => {
+  const rows = visible();
+  if (e.target.checked) rows.forEach(r => selected.add(r.person_key));
+  else rows.forEach(r => selected.delete(r.person_key));
+  render();
+});
+
+el("q").addEventListener("input", render);
+["tpl","sheets"].forEach(id => el(id).addEventListener("change", updateHref));
+el("preview").addEventListener("click", () => { el("pv").src = el("download").href; });
+
+(async () => {
+  [roster, layouts] = await Promise.all([
+    fetch("/api/registrants").then(r=>r.json()),
+    fetch("/api/layouts").then(r=>r.json()),
+  ]);
+  const t = await fetch("/api/tallies").then(r=>r.json());
+  el("tpl").innerHTML = Object.entries(layouts.layouts)
+    .map(([sku,L]) => `<option value="${escapeHtml(sku)}"${sku===layouts.default?" selected":""}>${escapeHtml(L.label)}</option>`).join("");
+  tiles(t);
+  roster.forEach(r => selected.add(r.person_key));
+  render();
+})();
+</script>
+</body>
+</html>

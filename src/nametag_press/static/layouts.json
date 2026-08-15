@@ -1,0 +1,60 @@
+{
+  "default": "5392",
+  "layouts": {
+    "5392": {
+      "affiliation_pt_max": 12.0,
+      "affiliation_pt_min": 8.0,
+      "card_h": 216.0,
+      "card_w": 288.0,
+      "cols": 2,
+      "gap_x": 0.0,
+      "gap_y": 0.0,
+      "label": "Avery 5392 \u2014 4 \u00d7 3 in, 6 per sheet",
+      "margin_x": 18.0,
+      "margin_y": 72.0,
+      "name_pt_max": 22.0,
+      "name_pt_min": 12.0,
+      "per_page": 6,
+      "rows": 3,
+      "sku": "5392"
+    },
+    "5395": {
+      "affiliation_pt_max": 10.0,
+      "affiliation_pt_min": 8.0,
+      "card_h": 167.76,
+      "card_w": 243.0,
+      "cols": 2,
+      "gap_x": 18.0,
+      "gap_y": 7.2,
+      "label": "Avery 5395 \u2014 3\u215c \u00d7 2\u2153 in, 8 per sheet",
+      "margin_x": 54.0,
+      "margin_y": 36.0,
+      "name_pt_max": 16.0,
+      "name_pt_min": 10.0,
+      "per_page": 8,
+      "rows": 4,
+      "sku": "5395"
+    },
+    "74541": {
+      "affiliation_pt_max": 12.0,
+      "affiliation_pt_min": 8.0,
+      "card_h": 216.0,
+      "card_w": 288.0,
+      "cols": 2,
+      "gap_x": 0.0,
+      "gap_y": 0.0,
+      "label": "Avery 74541 \u2014 4 \u00d7 3 in, 6 per sheet",
+      "margin_x": 18.0,
+      "margin_y": 72.0,
+      "name_pt_max": 22.0,
+      "name_pt_min": 12.0,
+      "per_page": 6,
+      "rows": 3,
+      "sku": "74541"
+    }
+  },
+  "page": {
+    "height": 792.0,
+    "width": 612.0
+  }
+}
