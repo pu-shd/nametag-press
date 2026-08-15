@@ -1,61 +1,36 @@
 # nametag-press
 
-Print-ready Avery badge sheets from the registrant roster.
+Avery-format badge PDFs, generated server-side.
 
-One of five applications in the [event-management stack](https://github.com/pu-shd/eventkit).
+One of five applications in the
+[event-management stack](https://github.com/pu-shd/event-stack), built on
+[eventkit](https://github.com/pu-shd/eventkit).
 
 ## What it does
 
-- **Badge PDFs** on three Avery stocks, with per-badge text fitting.
-- **Selection**: search, filter by role, tick the people you want.
-- **In-browser preview** of the actual PDF — not a CSS approximation of it.
-- **Calibration sheets**: outlined but empty, for aligning a printer.
-- **Logo upload** for the badge header, stored in the database.
-
-## Supported stock
-
-| SKU | Card | Per sheet | Margins | Gaps |
-| --- | --- | --- | --- | --- |
-| `5392` (default) | 4 × 3 in | 6 | 0.25 in sides, 1.0 in top/bottom | none |
-| `74541` | 4 × 3 in | 6 | identical to 5392 | none |
-| `5395` | 3⅜ × 2⅓ in | 8 | 0.75 in sides, 0.5 in top/bottom | 0.25 × 0.1 in |
-
-`74541` and `5392` are the same physical sheet under two part numbers. Both are
-listed so you can pick whichever is printed on the box in front of you.
-
-## Calibrate before you print a box
-
-```
-Download a blank sheet → print on plain paper → hold it against real stock
-```
-
-A passing test suite and a misaligned sheet are entirely compatible. The geometry
-tests assert that every layout fits on Letter and that no card escapes the page,
-which catches an arithmetic slip — they cannot catch your printer's margins.
-
-## One renderer
-
-Geometry lives in `layout.py` and nowhere else. `layouts.json`, which the browser
-uses to draw the selection grid, is **generated** from it and asserted equal in CI.
-
-The predecessor defined the geometry twice — once in ReportLab and once in a print
-CSS grid — and the CSS version could not reproduce per-line autoshrink, so a long
-name printed differently depending on which path you used. There is now one path,
-and the preview is the output.
-
-## This application does not own swag
-
-There is no `t_shirt_size` column. Inventory, replacement sizes and issuance all
-live in `ticket-reconciler`, which has the check-in desk. The predecessor stored a
-size here, backed it up, and never rendered it anywhere. Two applications counting
-shirts independently is how you oversell mediums.
+- Renders badges for a selected roster onto Avery 5392, 74541 or 5395.
+- Auto-shrinks long names and affiliations per line.
+- Role labels and colours come from the event profile.
+- Blank calibration sheets, and an in-browser PDF preview.
+- Logos are stored in the database, so they survive a container restart.
 
 ## Quickstart
 
 ```sh
-docker-compose run --rm test     # the whole suite, same command as CI
-docker-compose up app            # http://localhost:8000
+docker-compose up            # http://localhost:8000
+docker-compose run --rm test
 ```
+
+## Routes
+
+| Route | Auth | |
+|---|---|---|
+| `GET /` | user | roster and selection |
+| `GET /api/badges.pdf?template=&keys=` | user | the sheet |
+| `GET /api/badges/blank.pdf?sheets=` | user | calibration |
+| `GET/PUT /api/branding/{slot}` | user | logos |
+| `POST /api/drupal-webhook` | token | upsert |
+| `GET /healthz` | none | liveness |
 
 ## Configuration
 
@@ -68,46 +43,55 @@ docker-compose up app            # http://localhost:8000
 | `MAX_BADGES_PER_RUN` | `600` | A slip in a selection should not spool hundreds of sheets. |
 | `EVENT_PROFILE` | unset | Supplies role labels and colours, the default stock, and whether to show affiliation. |
 
-## Roles come from the profile
+## Drupal wiring
 
-`profile.roles` supplies the label and colour printed at the bottom of each badge.
-Someone presenting a poster with no other role is labelled a poster presenter,
-because that is what makes them identifiable at their poster.
+Add a Remote Post handler on your registration webform pointing at
+`https://<app>.azurewebsites.net/api/drupal-webhook`, Completed and Updated,
+method POST, type JSON. Custom options:
 
-## Logos
+```yaml
+headers:
+  X-Drupal-Webhook-Token: <the token the toolkit printed>
+```
 
-`PUT /api/branding/primary` with a PNG, JPEG or SVG under 2 MB. Stored as bytes in
-the database — the predecessor wrote them to a path that was not the Azure Files
-mount, so they vanished on container restart, after which the renderer silently drew
-nothing because the failure path was a bare `except: pass`. A corrupt logo here logs
-a warning and still prints the badges.
+**The nesting matters** — a flat key is ignored and every call 403s while the
+registrant still sees success. Confirm with `GET /api/webhook/status`, which
+reports counters and `unmapped_keys` and no attendee data.
 
-Backups deliberately exclude logo bytes: a backup is a data export staff download
-and email around, and it should not carry megabytes of image.
+Field keys are declared in
+[drupal-event-forms](https://github.com/pu-shd/drupal-event-forms/blob/main/contracts/).
+
+## Calibrate before printing a box
+
+Print one blank sheet on plain paper and hold it against a real Avery sheet, up
+to the light. Printer margins drift. One sheet, and it saves a box.
+
+## One renderer
+
+ReportLab produces the PDF; the browser previews that same PDF. There is no
+separate print-CSS path, so what you preview is what prints.
+
+## This application does not own swag
+
+Sizes live in `ticket-reconciler`. Two applications counting shirts is how you
+oversell mediums.
 
 ## Deploying
 
 ```zsh
-eventkit azure deploy --event my-event-2027 --dry-run   # every az command, none run
+eventkit azure deploy --event my-event-2027 --dry-run   # prints every az command
 eventkit azure deploy --event my-event-2027
 ```
 
-`deploy/app.conf` declares what the toolkit needs: the settings to prompt for,
-generate or compute, and the manual gates this application requires. For
-nametag-press, every route is behind Easy Auth.
+Idempotent and resumable; it joins the event's existing resource group, plan and
+registry or creates them. `deploy/app.conf` declares the settings and gates.
+Every route is behind Easy Auth.
 
-The toolkit is idempotent and resumable — it joins the event's existing resource
-group, plan and registry, or creates them if this is the event's first
-application. It is the **only** writer of application settings; do not also set
-them in a workflow. Full documentation:
-[`docs/azure/`](https://github.com/pu-shd/eventkit/blob/main/docs/azure/README.md).
-
-CI/CD templates for deploy, test, backup, drift, admin tasks and teardown ship
-with eventkit:
+CI/CD templates:
 
 ```zsh
-cp "$(python -c 'import eventkit.azure as a; print(a.templates_path())')"/workflows/deploy.yml \
-   .github/workflows/
+TPL="$(python -c 'import eventkit.azure as a; print(a.templates_path())')"
+cp "$TPL"/workflows/{deploy,test,backup}.yml .github/workflows/
 ```
 
 Without Azure, the container runs anywhere:
@@ -115,11 +99,14 @@ Without Azure, the container runs anywhere:
 ```sh
 docker build --target runtime -t nametag-press .
 docker run -p 8000:8000 \
+  -v "$PWD/event-profile.yaml:/app/event-profile.yaml:ro" \
   -e DRUPAL_WEBHOOK_TOKEN="$(openssl rand -hex 32)" \
   -e AUTHORIZED_PRINCIPALS="you@example.edu" \
   -e DATABASE_URL="sqlite:////data/nametag-press.db" \
   nametag-press
 ```
+
+→ [Deployment guide](https://github.com/pu-shd/eventkit/blob/main/docs/azure/README.md)
 
 ## Licence
 
